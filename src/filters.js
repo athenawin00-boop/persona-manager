@@ -2,7 +2,7 @@
  * 검색·태그 교집합·정리용 조건 필터 — 순수 로직.
  *
  * 입력 엔트리 모양(st-bridge.js가 만든다):
- *   { avatarId, name, description, lorebook, hasImage, tagIds, favorite, recentIndex }
+ *   { avatarId, name, description, lorebook, tagIds, favorite, recentIndex }
  *
  * ST 배관을 부르지 않는다. logic-harness로 잘라내 단독 실행된다.
  */
@@ -21,7 +21,7 @@ export function looseIncludes(haystack, needle) {
 /**
  * 정리용 조건 한 개 판정.
  * @param {object} entry
- * @param {string} special 'untagged' | 'nodesc' | 'lorebook' | 'noimage'
+ * @param {string} special 'untagged' | 'nodesc' | 'lorebook'
  * @returns {boolean}
  */
 export function matchesSpecial(entry, special) {
@@ -32,8 +32,6 @@ export function matchesSpecial(entry, special) {
             return !String(entry.description ?? '').trim();
         case 'lorebook':
             return !!String(entry.lorebook ?? '').trim();
-        case 'noimage':
-            return entry.hasImage === false;
         default:
             return true;
     }

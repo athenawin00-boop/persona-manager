@@ -69,7 +69,9 @@ export function plainChip(label, opts = {}) {
  * @param {string} opts.currentId 현재 사용 중 avatarId
  * @param {boolean} [opts.focused] 방향키 포커스
  * @param {boolean} [opts.picked] 다중 선택됨
- * @param {boolean} [opts.selectable] 체크 표시 자리를 쓸지
+ * @param {boolean} [opts.selectable] 모서리에 다중 선택 체크를 단다
+ * @param {function} [opts.onTogglePick] (entry) => void — 체크를 눌렀을 때
+ * @param {function} [opts.onToggleFavorite] (entry) => void — ★을 눌렀을 때(주면 ★이 항상 보인다)
  * @param {function} [opts.onClick]
  * @param {function} [opts.onDblClick]
  * @returns {HTMLElement}
@@ -82,17 +84,32 @@ export function personaCard(entry, settings, opts = {}) {
     if (entry.avatarId === opts.currentId) card.classList.add('pm-current');
     if (opts.focused) card.classList.add('pm-focused');
     if (opts.picked) card.classList.add('pm-picked');
+    // 체크가 왼쪽 위를 차지하면 '사용 중' 딱지·태그 점이 그 아래 깔린다 — CSS가 옆으로 민다
+    if (opts.selectable) card.classList.add('pm-has-pick');
 
     const img = document.createElement('img');
     wireAvatarImage(img, entry.avatarId);
     card.append(img);
+
+    if (opts.selectable) {
+        const pick = document.createElement('span');
+        pick.className = 'pm-card-pick' + (opts.picked ? ' pm-on' : '');
+        pick.textContent = opts.picked ? '☑' : '☐';
+        pick.title = '여러 개 고르기';
+        pick.addEventListener('click', (e) => {
+            // 카드 클릭은 세부창 열기다 — 체크는 거기까지 올라가면 안 된다
+            e.stopPropagation();
+            opts.onTogglePick?.(entry, e);
+        });
+        card.append(pick);
+    }
 
     if (entry.avatarId === opts.currentId) {
         const badge = document.createElement('span');
         badge.className = 'pm-card-badge';
         badge.textContent = '사용 중';
         card.append(badge);
-    } else if (opts.picked) {
+    } else if (opts.picked && !opts.selectable) {
         const ck = document.createElement('span');
         ck.className = 'pm-card-check';
         ck.textContent = '✓';
@@ -114,10 +131,20 @@ export function personaCard(entry, settings, opts = {}) {
         }
     }
 
-    if (entry.favorite) {
+    // 끄기도 돼야 하므로 콜백이 있으면 꺼진 ★도 그린다(흐리게). 콜백이 없으면 예전처럼 켜졌을 때만.
+    if (opts.onToggleFavorite || entry.favorite) {
         const star = document.createElement('span');
-        star.className = 'pm-card-star';
+        star.className = 'pm-card-star' + (entry.favorite ? ' pm-on' : '');
         star.textContent = '★';
+        if (opts.onToggleFavorite) {
+            star.classList.add('pm-clickable');
+            star.title = entry.favorite ? '즐겨찾기에서 빼기' : '즐겨찾기에 넣기';
+            star.addEventListener('click', (e) => {
+                // 카드 클릭이 전환·세부창이라 ★은 여기서 멈춘다
+                e.stopPropagation();
+                opts.onToggleFavorite(entry, e);
+            });
+        }
         card.append(star);
     }
 
@@ -176,7 +203,7 @@ export function openTagMenu(anchor, settings, opts) {
     const input = document.createElement('input');
     input.type = 'text';
     input.className = 'pm-tagmenu-input';
-    input.placeholder = '태그 이름을 적고 Enter를 눌러 주세요';
+    input.placeholder = '새 태그 이름 + Enter';
     menu.append(input);
 
     const list = document.createElement('div');

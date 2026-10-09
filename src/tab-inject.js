@@ -14,7 +14,7 @@
 
 import { personasFilter } from '../../../../personas.js';
 import { power_user } from '../../../../power-user.js';
-import { getCurrentAvatarId, rerenderOriginalList } from './st-bridge.js';
+import { getCurrentAvatarId, openOriginalTab, rerenderOriginalList } from './st-bridge.js';
 import {
     addTagToPersona, createTag, deleteTag, getPersonaTags,
     removeTagFromPersona, renameTag, setTagColor, toggleFavorite, isFavorite,
@@ -87,6 +87,30 @@ function setScope(next) {
         console.error('[persona-manager] 필터 적용 실패', err);
     }
     renderChips();
+}
+
+/**
+ * 관리 화면의 '원래 탭에서 열기' 종점.
+ *
+ * ST 원래 페르소나 서랍을 열고 그 페르소나를 보이게 한다.
+ * 우리 칩 필터가 켜져 있으면 그 페르소나가 목록에서 걸러져 있을 수 있다 —
+ * 서랍만 열면 "열었는데 없다"가 되므로 먼저 범위를 푼다.
+ * 현재 페르소나는 바꾸지 않는다(위치 이동·강조까지만).
+ *
+ * @param {string} avatarId
+ * @returns {Promise<boolean>} 목록에서 실제로 찾았는지
+ */
+export async function revealInOriginalTab(avatarId) {
+    try {
+        const settings = store.get();
+        const hidden = tabScope === 'fav'
+            ? !settings.favorites.includes(avatarId)
+            : tabScope !== 'all' && !(settings.personaTags[avatarId] ?? []).includes(tabScope);
+        if (hidden) setScope('all');
+    } catch (err) {
+        console.error('[persona-manager] 원래 탭 범위 풀기 실패', err);
+    }
+    return await openOriginalTab(avatarId);
 }
 
 /** 칩 줄을 다시 그린다. */

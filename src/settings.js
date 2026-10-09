@@ -16,7 +16,7 @@ export const TAG_PALETTE = [
 ];
 
 /** 사이드바 '정리용' 조건 키 */
-export const SPECIAL_FILTERS = ['untagged', 'nodesc', 'lorebook', 'noimage'];
+export const SPECIAL_FILTERS = ['untagged', 'nodesc', 'lorebook'];
 
 /** 보기 모드 */
 export const VIEW_MODES = ['list', 'small', 'large'];

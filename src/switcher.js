@@ -1,12 +1,13 @@
 /**
  * 빠른 전환창 — 입력창 옆 얼굴 버튼으로 열린다.
  *
- * 검색(이름+태그) · 태그 칩 교집합 · 즐겨찾기/최근/전체 · 방향키·Enter·Esc.
+ * 검색(이름+태그) · 태그 칩 교집합 · 즐겨찾기/최근/전체 · 카드마다 ★ 토글 · 방향키·Enter·Esc.
  */
 
 import { createFloatingWindow, isCoarsePointer, isNarrowScreen } from './window.js';
 import { filterPersonas, sortByRecent } from './filters.js';
 import { buildEntries, getCurrentAvatarId, switchPersona } from './st-bridge.js';
+import { toggleFavorite } from './settings.js';
 import { personaCard, sectionLabel, tagChip, plainChip, emptyNote } from './ui-parts.js';
 
 const WINDOW_ID = 'pm_switch_window';
@@ -202,6 +203,13 @@ function render() {
             grid.append(personaCard(entry, settings, {
                 currentId,
                 onClick: (en) => { win.close(); switchPersona(en.avatarId); },
+                // ★은 stopPropagation 이라 카드 클릭(=전환)으로 번지지 않는다.
+                // 다시 그리면 위의 '★ 즐겨찾기' 줄이 그 자리에서 바로 맞춰진다.
+                onToggleFavorite: (en) => {
+                    toggleFavorite(settings, en.avatarId);
+                    store.save();
+                    render();
+                },
             }));
         }
         list.append(grid);

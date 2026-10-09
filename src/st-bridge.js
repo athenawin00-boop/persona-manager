@@ -14,11 +14,15 @@ import {
 } from '../../../../../script.js';
 import { power_user } from '../../../../power-user.js';
 
-/** 이미지가 없는 페르소나에 쓸 ST 기본 얼굴 */
+/** 썸네일을 못 불러왔을 때 대신 보여 줄 ST 기본 얼굴 */
 export const DEFAULT_AVATAR_IMG = 'img/user-default.png';
 
-/** 서버에서 확인한 실존 아바타 파일 목록 캐시 */
+/** `/api/avatars/get` 가 돌려준 실제 파일 목록 캐시 */
 let avatarFileCache = null;
+/** 그 조회가 한 번이라도 성공했는지 — 실패와 "정말 0개"를 가르는 유일한 근거 */
+let avatarFilesOk = false;
+/** 폴백 경고를 콘솔에 한 번만 찍기 위한 빗장 */
+let warnedFallback = false;
 
 /** @returns {object} ST 컨텍스트 */
 export function ctx() {
@@ -37,33 +41,61 @@ export function thumbUrl(avatarId) {
 
 /**
  * 서버의 실제 아바타 파일 목록을 받아 캐시한다.
- * 이미지 없는 페르소나(설정엔 있는데 파일이 없는 것)를 가르는 유일한 근거다.
+ *
+ * 이게 목록의 정본이다 — ST 원래 페르소나 패널도 같은 `/api/avatars/get` 응답으로 그린다
+ * (personas.js:275 getUserAvatars → allEntities). power_user.personas 키를 정본으로 쓰면
+ * 파일이 지워진 페르소나의 설정 잔재까지 매니저에만 뜬다(실측 77 vs 72).
+ *
  * @param {boolean} [force]
  * @returns {Promise<string[]>}
  */
 export async function refreshAvatarFiles(force = false) {
-    if (avatarFileCache && !force) return avatarFileCache;
+    if (avatarFilesOk && !force) return avatarFileCache;
     try {
         const list = await getUserAvatars(false);
-        avatarFileCache = Array.isArray(list) ? list : [];
+        if (Array.isArray(list)) {
+            avatarFileCache = list;
+            avatarFilesOk = true;
+            warnedFallback = false;
+        } else {
+            console.warn('[persona-manager] 아바타 목록 응답이 배열이 아닙니다 — 설정 등록분으로 대신합니다.', list);
+        }
     } catch (err) {
-        console.error('[persona-manager] 아바타 목록 조회 실패', err);
-        avatarFileCache = avatarFileCache ?? [];
+        console.error('[persona-manager] 아바타 목록 조회 실패 — 설정 등록분으로 대신합니다.', err);
     }
-    return avatarFileCache;
+    return avatarFileCache ?? [];
 }
 
-/** @returns {string[]} 캐시된 실존 파일 목록 */
+/** @returns {string[]} 캐시된 파일 목록(조회 전이면 빈 배열) */
 export function getAvatarFiles() {
     return avatarFileCache ?? [];
 }
 
 /**
- * 설정에 등록된 모든 페르소나의 avatarId.
- * power_user.personas가 정본이다(파일은 있는데 등록이 안 된 건 ST가 addMissingPersonas로 채운다).
+ * 파일 목록을 믿어도 되는가.
+ *
+ * ⚠️ 고아 데이터 정리처럼 **지우는** 동작은 반드시 이걸 먼저 본다.
+ * 조회가 실패한 걸 "페르소나가 하나도 없다"로 읽으면 사용자의 태그 배정이 통째로 날아간다.
+ *
+ * @returns {boolean}
+ */
+export function hasAvatarFileList() {
+    return avatarFilesOk && Array.isArray(avatarFileCache) && avatarFileCache.length > 0;
+}
+
+/**
+ * 매니저가 다루는 모든 페르소나의 avatarId — ST 패널과 같은 정본(파일 목록).
+ *
+ * 조회가 실패했거나 아직 안 돌았으면 설정 등록분으로 폴백한다(빈 목록으로 판단하지 않는다).
  * @returns {string[]}
  */
 export function getAllAvatarIds() {
+    if (hasAvatarFileList()) return avatarFileCache.slice();
+
+    if (!warnedFallback) {
+        warnedFallback = true;
+        console.warn('[persona-manager] 아바타 파일 목록이 없어 설정(power_user.personas) 등록분을 대신 씁니다.');
+    }
     return Object.keys(power_user.personas ?? {});
 }
 
@@ -83,9 +115,6 @@ export function getDescriptor(avatarId) {
  * @returns {object[]}
  */
 export function buildEntries(settings) {
-    const files = new Set(getAvatarFiles());
-    const hasFileInfo = files.size > 0;
-
     return getAllAvatarIds().map((avatarId) => {
         const d = getDescriptor(avatarId);
         const recentIndex = settings.recent.indexOf(avatarId);
@@ -95,8 +124,6 @@ export function buildEntries(settings) {
             description: d.description ?? '',
             lorebook: d.lorebook ?? '',
             title: d.title ?? '',
-            // 파일 목록을 못 받았으면 '사진 없음' 판정을 하지 않는다(거짓 양성 방지)
-            hasImage: hasFileInfo ? files.has(avatarId) : true,
             tagIds: settings.personaTags[avatarId] ?? [],
             favorite: settings.favorites.includes(avatarId),
             recentIndex,
@@ -174,20 +201,54 @@ export async function setDescriptionSafe(avatarId, text) {
 }
 
 /**
- * ST 원래 페르소나 탭을 열고 해당 페르소나가 있는 페이지로 이동한다.
- * 서랍이 닫혀 있을 때만 누른다 — 열린 서랍을 또 누르면 닫힌다.
- * @param {string} avatarId
+ * ST 원래 페르소나 서랍을 연다. 닫혀 있을 때만 누른다 —
+ * 열린 서랍을 또 누르면 닫힌다(스킬 2단계 내비 서랍 규칙).
+ * @returns {boolean} 서랍이 열려 있게 됐는지
  */
-export async function openOriginalTab(avatarId) {
+export function openPersonaDrawer() {
     const drawer = document.querySelector('#PersonaManagement');
-    if (drawer?.classList.contains('closedDrawer')) {
+    if (!drawer) return false;
+    if (drawer.classList.contains('closedDrawer')) {
         globalThis.jQuery('#persona-management-button .drawer-toggle').trigger('click');
     }
+    return true;
+}
+
+/**
+ * 목록에서 그 페르소나 행을 찾아 스크롤로 끌어오고 잠깐 테두리를 준다.
+ *
+ * ⚠️ `.avatar-container` 를 클릭하면 ST가 그 페르소나로 **전환**한다(personas.js:2972).
+ * 여긴 위치 이동과 표시만 한다 — 현재 페르소나는 건드리지 않는다.
+ *
+ * @param {string} avatarId
+ * @returns {boolean} 찾았는지
+ */
+export function highlightInOriginalList(avatarId) {
+    const el = document.querySelector(`#user_avatar_block .avatar-container[data-avatar-id="${CSS.escape(avatarId)}"]`);
+    if (!el) return false;
+    el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    el.classList.add('pm-tab-spotlight');
+    setTimeout(() => el.classList.remove('pm-tab-spotlight'), 2600);
+    return true;
+}
+
+/**
+ * ST 원래 페르소나 탭을 열고 해당 페르소나가 있는 페이지로 이동해 보이게 한다.
+ * @param {string} avatarId
+ * @returns {Promise<boolean>} 목록에서 실제로 찾았는지
+ */
+export async function openOriginalTab(avatarId) {
+    openPersonaDrawer();
     try {
         await getUserAvatars(true, avatarId);
     } catch (err) {
         console.error('[persona-manager] 원래 탭 이동 실패', err);
+        return false;
     }
+    // 서랍 펼침 애니메이션과 목록 재렌더가 끝난 뒤에야 행의 위치가 정해진다
+    return await new Promise((resolve) => {
+        setTimeout(() => resolve(highlightInOriginalList(avatarId)), 260);
+    });
 }
 
 /** ST 원래 페르소나 목록을 다시 그리게 한다. */

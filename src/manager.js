@@ -2,16 +2,17 @@
  * 관리 화면 — 요술봉 메뉴 '페르소나 매니저'로 열린다.
  *
  * 왼쪽 사이드바(범위) · 검색 · 보기 토글(목록/작게/크게) ·
- * 목록·작게에서 다중 선택 → 하단 바 일괄 태그/즐겨찾기 ·
- * 크게에서 카드 클릭 → 오른쪽 편집 패널.
+ * 세 모드 모두 카드·행 클릭 → 세부창(오른쪽 편집 패널, 좁은 화면은 전체화면) ·
+ * 다중 선택은 체크칸(목록)·모서리 체크(작게)로만 → 하단 바 일괄 태그/즐겨찾기.
  */
 
 import { createFloatingWindow, isNarrowScreen } from './window.js';
 import { filterPersonas, sortByName, sortByRecent } from './filters.js';
 import {
     buildEntries, getCurrentAvatarId, switchPersona,
-    openOriginalTab, renamePersonaSafe, setDescriptionSafe, wireAvatarImage,
+    renamePersonaSafe, setDescriptionSafe, wireAvatarImage,
 } from './st-bridge.js';
+import { revealInOriginalTab } from './tab-inject.js';
 import {
     addTagToPersona, countByTag, createTag, deleteTag, getPersonaTags,
     removeTagFromPersona, renameTag, setFavorite, setTagColor, toggleFavorite,
@@ -27,7 +28,7 @@ let openSwitcher = null;
 let query = '';
 let scope = 'all';
 let picked = new Set();        // 다중 선택된 avatarId
-let selectedId = null;         // 크게 모드 편집 대상
+let selectedId = null;         // 세부창(편집 패널) 대상
 
 /**
  * @param {object} deps
@@ -134,8 +135,8 @@ function render() {
     matched = scope === 'recent' ? sortByRecent(matched) : sortByName(matched);
 
     renderMain(settings, matched, currentId, mode);
-    renderEdit(settings, entries, currentId, mode);
-    renderBulk(settings, mode);
+    renderEdit(settings, entries, currentId);
+    renderBulk(settings);
 }
 
 function renderSidebar(settings, entries) {
@@ -229,7 +230,6 @@ function renderSidebar(settings, entries) {
     item('special:untagged', '태그 없음', entries.filter(e => (e.tagIds?.length ?? 0) === 0).length);
     item('special:nodesc', '설명 빔', entries.filter(e => !String(e.description ?? '').trim()).length);
     item('special:lorebook', '로어북 붙음', entries.filter(e => !!String(e.lorebook ?? '').trim()).length);
-    item('special:noimage', '사진 없음', entries.filter(e => e.hasImage === false).length);
 }
 
 function handleTagManage(settings, tagId, action, value) {
@@ -261,6 +261,19 @@ function handleTagManage(settings, tagId, action, value) {
     }
 }
 
+/** 다중 선택 토글 — 체크칸·모서리 체크에서만 부른다. */
+function togglePick(avatarId) {
+    picked.has(avatarId) ? picked.delete(avatarId) : picked.add(avatarId);
+    render();
+}
+
+/** 즐겨찾기 토글 — 카드·행의 ★에서 바로 부른다(세부창을 열지 않는다). */
+function toggleFav(avatarId) {
+    toggleFavorite(store.get(), avatarId);
+    store.save();
+    render();
+}
+
 function renderMain(settings, matched, currentId, mode) {
     const main = win.root.querySelector('#pm_manage_main');
     main.textContent = '';
@@ -285,14 +298,14 @@ function renderMain(settings, matched, currentId, mode) {
     for (const entry of matched) {
         grid.append(personaCard(entry, settings, {
             currentId,
-            picked: mode === 'small' && picked.has(entry.avatarId),
-            focused: mode === 'large' && entry.avatarId === selectedId,
+            // 카드 클릭은 세 모드 전부 세부창이다. 다중 선택은 '작게'의 모서리 체크가 따로 맡는다.
+            selectable: mode === 'small',
+            picked: picked.has(entry.avatarId),
+            focused: entry.avatarId === selectedId,
+            onTogglePick: (en) => togglePick(en.avatarId),
+            onToggleFavorite: (en) => toggleFav(en.avatarId),
             onClick: (en) => {
-                if (mode === 'small') {
-                    picked.has(en.avatarId) ? picked.delete(en.avatarId) : picked.add(en.avatarId);
-                } else {
-                    selectedId = en.avatarId;
-                }
+                selectedId = en.avatarId;
                 render();
             },
         }));
@@ -305,24 +318,34 @@ function listRow(settings, entry, currentId) {
     row.className = 'pm-row';
     row.dataset.avatarId = entry.avatarId;
     if (picked.has(entry.avatarId)) row.classList.add('pm-picked');
+    if (entry.avatarId === selectedId) row.classList.add('pm-focused');
     if (entry.avatarId === currentId) row.classList.add('pm-current');
 
     const box = document.createElement('span');
-    box.className = 'pm-row-check';
+    box.className = 'pm-row-check pm-clickable';
     box.textContent = picked.has(entry.avatarId) ? '☑' : '☐';
+    box.title = '여러 개 고르기';
+    box.addEventListener('click', (e) => {
+        // 행 클릭은 세부창 열기다 — 체크칸만 다중 선택을 맡는다
+        e.stopPropagation();
+        togglePick(entry.avatarId);
+    });
+
+    const star = document.createElement('span');
+    star.className = 'pm-row-star pm-clickable' + (entry.favorite ? ' pm-on' : '');
+    star.textContent = '★';
+    star.title = entry.favorite ? '즐겨찾기에서 빼기' : '즐겨찾기에 넣기';
+    star.addEventListener('click', (e) => {
+        e.stopPropagation();
+        toggleFav(entry.avatarId);
+    });
 
     const img = document.createElement('img');
     wireAvatarImage(img, entry.avatarId);
 
     const name = document.createElement('b');
     name.className = 'pm-row-name';
-    if (entry.favorite) {
-        const star = document.createElement('span');
-        star.className = 'pm-row-star';
-        star.textContent = '★ ';
-        name.append(star);
-    }
-    name.append(document.createTextNode(entry.name));
+    name.textContent = entry.name;
 
     const desc = document.createElement('span');
     desc.className = 'pm-row-desc';
@@ -344,29 +367,28 @@ function listRow(settings, entry, currentId) {
     lore.className = 'pm-row-lore';
     lore.textContent = String(entry.lorebook ?? '').trim() ? '📖 로어북' : '';
 
-    row.append(box, img, name, desc, tags, lore);
+    row.append(box, star, img, name, desc, tags, lore);
     row.addEventListener('click', () => {
-        picked.has(entry.avatarId) ? picked.delete(entry.avatarId) : picked.add(entry.avatarId);
         selectedId = entry.avatarId;
         render();
     });
     return row;
 }
 
-function renderEdit(settings, entries, currentId, mode) {
+function renderEdit(settings, entries, currentId) {
     const panel = win.root.querySelector('#pm_manage_edit');
     panel.textContent = '';
 
     const entry = entries.find(e => e.avatarId === selectedId);
     const narrow = isNarrowScreen();
-    // 좁은 화면엔 이 패널이 목록 위를 덮는 전체 화면이다 — 고른 게 없으면 아예 띄우지 않는다.
-    // 데스크탑은 전처럼 항상 붙어 있고 비었을 땐 안내문을 보여준다.
-    const show = mode === 'large' && (!narrow || !!entry);
+    // 데스크탑은 세 보기 모드 모두 오른쪽에 붙어 있고 비었을 땐 안내문을 보여준다.
+    // 좁은 화면엔 이 패널이 목록 위를 덮는 전체 화면이라 고른 게 없으면 아예 띄우지 않는다.
+    const show = !narrow || !!entry;
     panel.style.display = show ? '' : 'none';
     if (!show) return;
 
     if (!entry) {
-        panel.append(emptyNote('카드를 하나 고르면 여기서 이름과 설명을 고칠 수 있어요.'));
+        panel.append(emptyNote('카드나 행을 하나 누르면 여기서 이름과 설명을 고칠 수 있어요.'));
         return;
     }
 
@@ -389,11 +411,7 @@ function renderEdit(settings, entries, currentId, mode) {
     starBtn.id = 'pm_edit_star';
     starBtn.textContent = '★';
     starBtn.title = '즐겨찾기';
-    starBtn.addEventListener('click', () => {
-        toggleFavorite(settings, entry.avatarId);
-        store.save();
-        render();
-    });
+    starBtn.addEventListener('click', () => toggleFav(entry.avatarId));
 
     const nameLabel = document.createElement('label');
     nameLabel.textContent = '이름';
@@ -497,7 +515,12 @@ function renderEdit(settings, entries, currentId, mode) {
     openBtn.className = 'pm-btn';
     openBtn.id = 'pm_edit_opentab';
     openBtn.textContent = '원래 탭에서 열기';
-    openBtn.addEventListener('click', () => openOriginalTab(entry.avatarId));
+    openBtn.addEventListener('click', async () => {
+        // 관리창이 위에 떠 있으면 서랍을 열어도 가려서 안 보인다 — 먼저 비켜 준다
+        win.close();
+        const found = await revealInOriginalTab(entry.avatarId);
+        if (!found) toastr.info('원래 패널을 열었어요. 목록에서 바로 찾지는 못했어요.');
+    });
 
     buttons.append(switchBtn, openBtn);
 
@@ -508,11 +531,12 @@ function renderEdit(settings, entries, currentId, mode) {
     panel.append(back, head, nameLabel, nameInput, descLabel, descInput, tagLabel, tagRow, buttons);
 }
 
-function renderBulk(settings, mode) {
+function renderBulk(settings) {
     const bar = win.root.querySelector('#pm_manage_bulk');
     bar.textContent = '';
 
-    if (mode === 'large' || picked.size === 0) {
+    // 체크된 게 있을 때만 뜬다. 체크는 '목록'의 체크칸과 '작게'의 모서리 체크에서만 생긴다.
+    if (picked.size === 0) {
         bar.style.display = 'none';
         return;
     }

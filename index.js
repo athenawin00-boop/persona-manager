@@ -15,7 +15,7 @@ import { extension_settings } from '../../../extensions.js';
 import { MODULE_NAME, cleanupOrphans, normalizeSettings, pushRecent } from './src/settings.js';
 import {
     buildEntries, getAllAvatarIds, getCurrentAvatarId,
-    refreshAvatarFiles, wireAvatarImage,
+    hasAvatarFileList, refreshAvatarFiles, wireAvatarImage,
 } from './src/st-bridge.js';
 import { initSwitcher, openSwitcher, refreshSwitcher, toggleSwitcher } from './src/switcher.js';
 import { initManager, openManager, refreshManager } from './src/manager.js';
@@ -63,6 +63,29 @@ const store = {
         scheduleSideSurfaceRefresh();
     },
 };
+
+/**
+ * 고아 데이터(없어진 페르소나의 태그·즐겨찾기·최근)를 치운다 — 단, 안전할 때만.
+ *
+ * ⚠️ 여기서 지우는 건 사용자가 손으로 단 태그 배정이다. 되돌릴 수 없다.
+ * `/api/avatars/get` 조회가 실패하거나 빈 응답이면 "페르소나가 하나도 없다"로 읽혀
+ * 전체 배정이 통째로 날아간다. 그래서 파일 목록을 믿을 수 있을 때만 실행한다.
+ *
+ * @param {string} when 콘솔에 남길 시점 이름
+ * @returns {boolean} 실제로 돌렸는지
+ */
+function cleanupOrphansGuarded(when) {
+    if (!hasAvatarFileList()) {
+        console.warn(`[persona-manager] ${when}: 아바타 파일 목록을 믿을 수 없어 고아 데이터 정리를 건너뜁니다.`);
+        return false;
+    }
+    const removed = cleanupOrphans(store.get(), getAllAvatarIds());
+    if (removed.tags || removed.favorites || removed.recent) {
+        console.log(`[persona-manager] ${when}: 고아 데이터 정리`, removed);
+        store.save();
+    }
+    return true;
+}
 
 /** 얼굴 버튼 핸들(전역 재선택 금지 — 자매 배포본이 있으면 id가 두 벌이 된다) */
 let $faceButton = null;
@@ -253,13 +276,9 @@ jQuery(async () => {
         initManager({ store, openSwitcher: () => openSwitcher() });
         initTabInject({ store });
 
-        // 실존 아바타 파일을 받아 '사진 없음' 판정 근거를 만들고, 고아 데이터를 치운다
+        // 목록의 정본인 아바타 파일 목록을 받고, 그게 믿을 만할 때만 고아 데이터를 치운다
         await refreshAvatarFiles(true);
-        const removed = cleanupOrphans(store.get(), getAllAvatarIds());
-        if (removed.tags || removed.favorites || removed.recent) {
-            console.log('[persona-manager] 고아 데이터 정리', removed);
-            store.save();
-        }
+        cleanupOrphansGuarded('첫 로드');
 
         // 현재 페르소나를 최근 목록에 올려 둔다(첫 로드)
         const current = getCurrentAvatarId();
@@ -294,11 +313,7 @@ jQuery(async () => {
 
         eventSource.on(event_types.PERSONA_DELETED, async () => {
             await refreshAvatarFiles(true);
-            const gone = cleanupOrphans(store.get(), getAllAvatarIds());
-            if (gone.tags || gone.favorites || gone.recent) {
-                console.log('[persona-manager] 페르소나 삭제 후 정리', gone);
-                store.save();
-            }
+            cleanupOrphansGuarded('페르소나 삭제 후');
             refreshAll();
         });
 
