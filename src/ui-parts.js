@@ -88,7 +88,7 @@ export function personaCard(entry, settings, opts = {}) {
     if (opts.selectable) card.classList.add('pm-has-pick');
 
     const img = document.createElement('img');
-    wireAvatarImage(img, entry.avatarId);
+    wireAvatarImage(img, entry.avatarId, { full: true });
     card.append(img);
 
     if (opts.selectable) {

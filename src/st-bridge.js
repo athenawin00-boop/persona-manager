@@ -261,11 +261,57 @@ export async function rerenderOriginalList(openPageAt = '') {
 }
 
 /**
+ * 원본 이미지 URL — ST 자신이 쓰는 경로와 같다(personas.js getUserAvatar).
+ * 썸네일은 config.yaml thumbnails.dimensions 크기(기본 96x144)라 큰 칸에선 뭉개진다.
+ */
+export function fullUrl(avatarId) {
+    return `User Avatars/${encodeURIComponent(avatarId)}`;
+}
+
+/** 원본 교체용 관찰자 — 화면(스크롤 영역 포함)에 들어온 카드만 원본을 받는다 */
+let hiResObserver = null;
+
+function getHiResObserver() {
+    if (hiResObserver || typeof IntersectionObserver !== 'function') return hiResObserver;
+    hiResObserver = new IntersectionObserver((entries) => {
+        for (const e of entries) {
+            // 목록을 다시 그리면 옛 카드가 문서에서 빠진다 — 그때 오는 알림으로 관찰을 끊는다
+            if (!e.target.isConnected) { hiResObserver.unobserve(e.target); continue; }
+            if (!e.isIntersecting) continue;
+            hiResObserver.unobserve(e.target);
+            loadHiRes(e.target);
+        }
+    }, { rootMargin: '200px' });
+    return hiResObserver;
+}
+
+/**
+ * 원본을 따로 받아 다 받아지면 그때 바꿔 끼운다 — 받는 동안엔 썸네일이 보이고,
+ * 원본이 실패하면 썸네일이 그대로 남는다(깨진 그림 대신).
+ * @param {HTMLImageElement} img
+ */
+function loadHiRes(img) {
+    const key = img.dataset.pmHiRes;
+    if (!key || img.dataset.pmFallback === '1') return;
+    const url = fullUrl(key);
+    const probe = new Image();
+    probe.decoding = 'async';
+    probe.onload = () => {
+        // 그 사이 같은 img 가 다른 얼굴로 다시 묶였거나 기본 얼굴로 떨어졌으면 덮지 않는다
+        if (img.dataset.pmHiRes !== key || img.dataset.pmFallback === '1') return;
+        img.src = url;
+    };
+    probe.src = url;
+}
+
+/**
  * 이미지 엘리먼트에 썸네일을 붙이고, 404면 ST 기본 얼굴로 떨어뜨린다.
+ * opts.full 이면 화면에 보일 때 원본으로 갈아 끼운다(카드·세부창용). 목록 줄은 썸네일로 충분하다.
  * @param {HTMLImageElement} img
  * @param {string} avatarId
+ * @param {{full?: boolean}} [opts]
  */
-export function wireAvatarImage(img, avatarId) {
+export function wireAvatarImage(img, avatarId, opts = {}) {
     img.loading = 'lazy';
     img.decoding = 'async';
     img.addEventListener('error', () => {
@@ -274,4 +320,12 @@ export function wireAvatarImage(img, avatarId) {
         img.src = DEFAULT_AVATAR_IMG;
     }, { once: true });
     img.src = thumbUrl(avatarId);
+    if (opts.full) {
+        img.dataset.pmHiRes = avatarId;
+        const io = getHiResObserver();
+        if (io) io.observe(img);
+        else loadHiRes(img);
+    } else {
+        delete img.dataset.pmHiRes;
+    }
 }

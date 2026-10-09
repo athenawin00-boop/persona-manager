@@ -404,7 +404,7 @@ function renderEdit(settings, entries, currentId) {
 
     const img = document.createElement('img');
     img.className = 'pm-edit-face';
-    wireAvatarImage(img, entry.avatarId);
+    wireAvatarImage(img, entry.avatarId, { full: true });
 
     const starBtn = document.createElement('span');
     starBtn.className = 'pm-edit-star' + (entry.favorite ? ' pm-on' : '');
