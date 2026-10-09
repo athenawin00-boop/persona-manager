@@ -4,7 +4,7 @@
  * 검색(이름+태그) · 태그 칩 교집합 · 즐겨찾기/최근/전체 · 방향키·Enter·Esc.
  */
 
-import { createFloatingWindow } from './window.js';
+import { createFloatingWindow, isCoarsePointer, isNarrowScreen } from './window.js';
 import { filterPersonas, sortByRecent } from './filters.js';
 import { buildEntries, getCurrentAvatarId, switchPersona } from './st-bridge.js';
 import { personaCard, sectionLabel, tagChip, plainChip, emptyNote } from './ui-parts.js';
@@ -20,6 +20,11 @@ let pickedTags = [];
 let focusIndex = 0;
 let flatOrder = [];        // 방향키가 도는 순서(avatarId 배열)
 let columns = 8;
+
+/** 한 줄에 몇 칸 — 폰에선 6칸이 48px 카드를 만들어 이름이 "Me…"로 잘렸다(실측). */
+function gridColumns() {
+    return isNarrowScreen() ? 4 : 6;
+}
 
 /**
  * @param {object} deps
@@ -40,8 +45,9 @@ export function openSwitcher() {
     win.open();
     render();
     const input = win.body.querySelector('#pm_switch_search');
-    input?.focus();
     input && (input.value = '');
+    // 폰에선 포커스를 주면 소프트 키보드가 올라와 카드를 절반 가린다 — 마우스일 때만 준다
+    if (!isCoarsePointer()) input?.focus();
 }
 
 /** 전환창이 열려 있으면 다시 그린다(페르소나 변경·태그 변경 반영). */
@@ -83,7 +89,8 @@ function buildWindow() {
 
     const foot = document.createElement('div');
     foot.className = 'pm-foot';
-    foot.innerHTML = '<span>←→↑↓ 고르기</span><span>Enter 바꾸기</span><span>Esc 닫기</span>';
+    // 터치 기기엔 통째로 숨긴다(style.css 의 @media (pointer: coarse)) — 링크는 바깥에 남긴다
+    foot.innerHTML = '<span class="pm-foot-keys"><span>←→↑↓ 고르기</span><span>Enter 바꾸기</span><span>Esc 닫기</span></span>';
     const link = document.createElement('span');
     link.className = 'pm-foot-link pm-clickable';
     link.id = 'pm_switch_to_manage';
@@ -200,8 +207,10 @@ function render() {
         list.append(grid);
     };
 
+    const cols = gridColumns();
+
     if (searching) {
-        columns = 6;
+        columns = cols;
         list.append(sectionLabel(`검색 결과 ${matched.length}`));
         if (!matched.length) list.append(emptyNote('맞는 페르소나가 없어요. 검색어나 태그를 바꿔 보세요.'));
         else addGrid(matched, columns);
@@ -211,13 +220,13 @@ function render() {
 
         if (favs.length) {
             list.append(sectionLabel(`★ 즐겨찾기 ${favs.length}`));
-            addGrid(favs, 6);
+            addGrid(favs, cols);
         }
         if (recents.length) {
             list.append(sectionLabel(`최근 ${recents.length}`));
-            addGrid(recents, 6);
+            addGrid(recents, cols);
         }
-        columns = 6;
+        columns = cols;
         list.append(sectionLabel(`전체 ${matched.length}`));
         addGrid(matched, columns);
     }

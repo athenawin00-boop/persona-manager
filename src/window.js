@@ -12,7 +12,34 @@ const DRAG_THRESHOLD = 4;
 const EDGE_MARGIN = 8;
 const Z_BASE = 4000;
 
+/** 좁은 화면 기준폭 — style.css 의 @media (max-width: 700px) 와 같은 값이어야 한다. */
+export const NARROW_MAX_WIDTH = 700;
+
 let zTop = Z_BASE;
+
+/**
+ * 폰처럼 좁은 화면인가. CSS 와 눈금을 맞추려고 같은 미디어 쿼리 문자열을 쓴다.
+ * @returns {boolean}
+ */
+export function isNarrowScreen() {
+    try {
+        return globalThis.matchMedia?.(`(max-width: ${NARROW_MAX_WIDTH}px)`).matches ?? false;
+    } catch {
+        return false;
+    }
+}
+
+/**
+ * 손가락으로 쓰는 기기인가 — 자동 포커스·키보드 안내 판정용.
+ * 화면 폭이 아니라 포인터 종류로 가른다 — 좌우 분할한 태블릿도 키보드가 화면을 가린다.
+ * @returns {boolean}
+ */
+export function isCoarsePointer() {
+    try {
+        if (globalThis.matchMedia?.('(pointer: coarse)').matches) return true;
+    } catch { /* 무시 */ }
+    return (globalThis.navigator?.maxTouchPoints ?? 0) > 0;
+}
 
 /**
  * 창이 화면 밖으로 나가지 않게 가둔다.
@@ -48,6 +75,8 @@ function makeDraggable(root, handle) {
 
     handle.addEventListener('pointerdown', (e) => {
         if (e.pointerType === 'mouse' && e.button !== 0) return;
+        // 좁은 화면에선 창이 화면을 꽉 채운다 — 끌면 inline left/top 이 박혀 레이아웃이 깨진다
+        if (isNarrowScreen()) return;
         if (e.target instanceof Element && e.target.closest('input, select, textarea, button, .pm-nodrag')) return;
         const rect = root.getBoundingClientRect();
         pending = true;

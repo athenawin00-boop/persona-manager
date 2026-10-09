@@ -274,11 +274,16 @@ export function openTagMenu(anchor, settings, opts) {
 
     document.body.append(menu);
 
+    // 화면 밖으로 나가지 않게 네 변을 전부 가둔다.
+    // 예전엔 왼쪽 하한이 없어 폰에서 오른쪽 칩을 누르면 left 가 음수로 나가 메뉴가 잘렸다.
     const rect = anchor.getBoundingClientRect();
+    const mw = menu.offsetWidth;
     const mh = menu.offsetHeight;
-    const top = rect.bottom + mh + 8 > window.innerHeight ? Math.max(8, rect.top - mh - 4) : rect.bottom + 4;
-    menu.style.left = `${Math.min(rect.left, window.innerWidth - menu.offsetWidth - 8)}px`;
-    menu.style.top = `${top}px`;
+    const left = Math.max(8, Math.min(rect.left, window.innerWidth - mw - 8));
+    const wantTop = rect.bottom + mh + 8 > window.innerHeight ? rect.top - mh - 4 : rect.bottom + 4;
+    const top = Math.max(8, Math.min(wantTop, window.innerHeight - mh - 8));
+    menu.style.left = `${Math.round(left)}px`;
+    menu.style.top = `${Math.round(top)}px`;
 
     setTimeout(() => {
         const away = (e) => {

@@ -6,7 +6,7 @@
  * 크게에서 카드 클릭 → 오른쪽 편집 패널.
  */
 
-import { createFloatingWindow } from './window.js';
+import { createFloatingWindow, isNarrowScreen } from './window.js';
 import { filterPersonas, sortByName, sortByRecent } from './filters.js';
 import {
     buildEntries, getCurrentAvatarId, switchPersona,
@@ -184,16 +184,32 @@ function renderSidebar(settings, entries) {
     head('태그');
     for (const tag of settings.tags) {
         const row = item(`tag:${tag.id}`, tag.name, counts[tag.id] ?? 0, tag.color);
-        row.title = '우클릭하면 이름·색·삭제를 고를 수 있어요.';
+        row.title = '⋯ 를 누르면 이름·색·삭제를 고를 수 있어요.';
+
+        const openMenuAt = (anchor) => openTagMenu(anchor, settings, {
+            activeIds: [],
+            allowManage: true,
+            onPick: (id) => { scope = `tag:${id}`; render(); },
+            onCreate: (name) => { createTag(settings, name); store.save(); render(); },
+            onManage: (id, action, value) => handleTagManage(settings, id, action, value),
+        });
+
+        // 폰엔 우클릭이 없다(iOS 길게 누르기로 contextmenu 가 안 뜰다) — 눈에 보이는 손잡이를 달아 둔다.
+        // 우클릭도 그대로 살려 둔다.
+        const dots = document.createElement('span');
+        dots.className = 'pm-side-dots pm-clickable';
+        dots.textContent = '⋯';
+        dots.title = '이름 바꾸기 · 색 · 지우기';
+        dots.addEventListener('click', (e) => {
+            // 범위 전환까지 같이 일어나면 메뉴를 부른 순간 목록이 휘어 눈이 피로해진다
+            e.stopPropagation();
+            openMenuAt(dots);
+        });
+        row.append(dots);
+
         row.addEventListener('contextmenu', (e) => {
             e.preventDefault();
-            openTagMenu(row, settings, {
-                activeIds: [],
-                allowManage: true,
-                onPick: (id) => { scope = `tag:${id}`; render(); },
-                onCreate: (name) => { createTag(settings, name); store.save(); render(); },
-                onManage: (id, action, value) => handleTagManage(settings, id, action, value),
-            });
+            openMenuAt(row);
         });
     }
     const addRow = document.createElement('div');
@@ -340,14 +356,29 @@ function listRow(settings, entry, currentId) {
 function renderEdit(settings, entries, currentId, mode) {
     const panel = win.root.querySelector('#pm_manage_edit');
     panel.textContent = '';
-    panel.style.display = mode === 'large' ? '' : 'none';
-    if (mode !== 'large') return;
 
     const entry = entries.find(e => e.avatarId === selectedId);
+    const narrow = isNarrowScreen();
+    // 좁은 화면엔 이 패널이 목록 위를 덮는 전체 화면이다 — 고른 게 없으면 아예 띄우지 않는다.
+    // 데스크탑은 전처럼 항상 붙어 있고 비었을 땐 안내문을 보여준다.
+    const show = mode === 'large' && (!narrow || !!entry);
+    panel.style.display = show ? '' : 'none';
+    if (!show) return;
+
     if (!entry) {
         panel.append(emptyNote('카드를 하나 고르면 여기서 이름과 설명을 고칠 수 있어요.'));
         return;
     }
+
+    // 좁은 화면 전용 되돌아가기(CSS 가 데스크탑엔 display:none 으로 감춘다)
+    const back = document.createElement('div');
+    back.className = 'pm-btn pm-edit-back';
+    back.id = 'pm_edit_back';
+    back.textContent = '← 목록';
+    back.addEventListener('click', () => {
+        selectedId = null;
+        render();
+    });
 
     const img = document.createElement('img');
     img.className = 'pm-edit-face';
@@ -474,7 +505,7 @@ function renderEdit(settings, entries, currentId, mode) {
     head.className = 'pm-edit-head';
     head.append(img, starBtn);
 
-    panel.append(head, nameLabel, nameInput, descLabel, descInput, tagLabel, tagRow, buttons);
+    panel.append(back, head, nameLabel, nameInput, descLabel, descInput, tagLabel, tagRow, buttons);
 }
 
 function renderBulk(settings, mode) {
