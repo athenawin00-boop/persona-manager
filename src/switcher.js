@@ -1,0 +1,227 @@
+/**
+ * 빠른 전환창 — 입력창 옆 얼굴 버튼으로 열린다.
+ *
+ * 검색(이름+태그) · 태그 칩 교집합 · 즐겨찾기/최근/전체 · 방향키·Enter·Esc.
+ */
+
+import { createFloatingWindow } from './window.js';
+import { filterPersonas, sortByRecent } from './filters.js';
+import { buildEntries, getCurrentAvatarId, switchPersona } from './st-bridge.js';
+import { personaCard, sectionLabel, tagChip, plainChip, emptyNote } from './ui-parts.js';
+
+const WINDOW_ID = 'pm_switch_window';
+
+let win = null;
+let store = null;          // { get(), save() }
+let openManager = null;    // 관리 화면 열기 콜백
+
+let query = '';
+let pickedTags = [];
+let focusIndex = 0;
+let flatOrder = [];        // 방향키가 도는 순서(avatarId 배열)
+let columns = 8;
+
+/**
+ * @param {object} deps
+ * @param {object} deps.store {get, save}
+ * @param {function} deps.openManager
+ */
+export function initSwitcher(deps) {
+    store = deps.store;
+    openManager = deps.openManager;
+}
+
+/** 전환창을 연다(없으면 만든다). */
+export function openSwitcher() {
+    if (!win) win = buildWindow();
+    query = '';
+    pickedTags = [];
+    focusIndex = 0;
+    win.open();
+    render();
+    const input = win.body.querySelector('#pm_switch_search');
+    input?.focus();
+    input && (input.value = '');
+}
+
+/** 전환창이 열려 있으면 다시 그린다(페르소나 변경·태그 변경 반영). */
+export function refreshSwitcher() {
+    if (win?.isOpen()) render();
+}
+
+/** 열려 있으면 닫고, 아니면 연다. */
+export function toggleSwitcher() {
+    if (win?.isOpen()) win.close();
+    else openSwitcher();
+}
+
+function buildWindow() {
+    const w = createFloatingWindow({
+        id: WINDOW_ID,
+        title: '페르소나 바꾸기',
+        icon: 'fa-solid fa-user',
+        extraClass: 'pm-switch',
+    });
+
+    const search = document.createElement('div');
+    search.className = 'pm-search pm-nodrag';
+    search.innerHTML = '<i class="fa-solid fa-magnifying-glass"></i>';
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.id = 'pm_switch_search';
+    input.placeholder = '이름이나 태그로 찾기…';
+    input.autocomplete = 'off';
+    search.append(input);
+
+    const chips = document.createElement('div');
+    chips.className = 'pm-chips';
+    chips.id = 'pm_switch_chips';
+
+    const body = document.createElement('div');
+    body.className = 'pm-switch-body';
+    body.id = 'pm_switch_list';
+
+    const foot = document.createElement('div');
+    foot.className = 'pm-foot';
+    foot.innerHTML = '<span>←→↑↓ 고르기</span><span>Enter 바꾸기</span><span>Esc 닫기</span>';
+    const link = document.createElement('span');
+    link.className = 'pm-foot-link pm-clickable';
+    link.id = 'pm_switch_to_manage';
+    link.textContent = '관리 화면 열기 ↗';
+    link.addEventListener('click', () => {
+        w.close();
+        openManager?.();
+    });
+    foot.append(link);
+
+    w.body.append(search, chips, body, foot);
+
+    input.addEventListener('input', () => {
+        query = input.value;
+        focusIndex = 0;
+        render();
+    });
+
+    w.root.addEventListener('keydown', onKeyDown);
+
+    return w;
+}
+
+function onKeyDown(e) {
+    if (e.key === 'Escape') {
+        e.preventDefault();
+        win.close();
+        return;
+    }
+    if (e.key === 'Enter') {
+        e.preventDefault();
+        const id = flatOrder[focusIndex];
+        if (id) {
+            win.close();
+            switchPersona(id);
+        }
+        return;
+    }
+    const step = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -columns, ArrowDown: columns }[e.key];
+    if (step === undefined) return;
+
+    e.preventDefault();
+    const next = focusIndex + step;
+    if (next < 0 || next >= flatOrder.length) return;
+    focusIndex = next;
+    paintFocus();
+}
+
+function paintFocus() {
+    const list = win.body.querySelector('#pm_switch_list');
+    list?.querySelectorAll('.pm-card.pm-focused').forEach(el => el.classList.remove('pm-focused'));
+    const id = flatOrder[focusIndex];
+    if (!id) return;
+    const el = list?.querySelector(`.pm-card[data-avatar-id="${CSS.escape(id)}"]`);
+    if (el) {
+        el.classList.add('pm-focused');
+        el.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    }
+}
+
+function render() {
+    if (!win) return;
+    const settings = store.get();
+    const currentId = getCurrentAvatarId();
+    const entries = buildEntries(settings);
+    const tagNameById = Object.fromEntries(settings.tags.map(t => [t.id, t.name]));
+
+    // 태그 칩 줄
+    const chips = win.body.querySelector('#pm_switch_chips');
+    chips.textContent = '';
+    for (const tag of settings.tags) {
+        chips.append(tagChip(tag, {
+            on: pickedTags.includes(tag.id),
+            onClick: (id) => {
+                const i = pickedTags.indexOf(id);
+                i >= 0 ? pickedTags.splice(i, 1) : pickedTags.push(id);
+                focusIndex = 0;
+                render();
+            },
+        }));
+    }
+    if (pickedTags.length) {
+        chips.append(plainChip('칩 해제', {
+            dashed: true,
+            onClick: () => { pickedTags = []; focusIndex = 0; render(); },
+        }));
+    }
+    if (!settings.tags.length) {
+        const note = document.createElement('span');
+        note.className = 'pm-hint';
+        note.textContent = '관리 화면에서 태그를 만들면 여기에 나와요.';
+        chips.append(note);
+    }
+
+    const matched = filterPersonas(entries, { query, tagIds: pickedTags, tagNameById });
+
+    const list = win.body.querySelector('#pm_switch_list');
+    list.textContent = '';
+    flatOrder = [];
+
+    const searching = !!query.trim() || pickedTags.length > 0;
+
+    const addGrid = (items, cols) => {
+        const grid = document.createElement('div');
+        grid.className = 'pm-grid';
+        grid.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
+        for (const entry of items) {
+            flatOrder.push(entry.avatarId);
+            grid.append(personaCard(entry, settings, {
+                currentId,
+                onClick: (en) => { win.close(); switchPersona(en.avatarId); },
+            }));
+        }
+        list.append(grid);
+    };
+
+    if (searching) {
+        columns = 6;
+        list.append(sectionLabel(`검색 결과 ${matched.length}`));
+        if (!matched.length) list.append(emptyNote('맞는 페르소나가 없어요. 검색어나 태그를 바꿔 보세요.'));
+        else addGrid(matched, columns);
+    } else {
+        const favs = matched.filter(e => e.favorite);
+        const recents = sortByRecent(matched.filter(e => e.recentIndex >= 0));
+
+        if (favs.length) {
+            list.append(sectionLabel(`★ 즐겨찾기 ${favs.length}`));
+            addGrid(favs, 6);
+        }
+        if (recents.length) {
+            list.append(sectionLabel(`최근 ${recents.length}`));
+            addGrid(recents, 6);
+        }
+        columns = 6;
+        list.append(sectionLabel(`전체 ${matched.length}`));
+        addGrid(matched, columns);
+    }
+
+    if (focusIndex >= flatOrder.length) focusIndex = 0;
+    paintFocus();
+}

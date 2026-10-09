@@ -1,0 +1,816 @@
+/* 페르소나 매니저 — 목업(tmp/persona_mockup) 색·레이아웃을 ST 테마 변수와 섞어 맞춘 것 */
+
+:root {
+    --pm-panel: var(--SmartThemeBlurTintColor, #262931);
+    --pm-panel2: var(--SmartThemeUserMesBlurTintColor, #2e323b);
+    --pm-line: var(--SmartThemeBorderColor, #3a3f4a);
+    --pm-tx: var(--SmartThemeBodyColor, #e6e3dc);
+    --pm-dim: var(--SmartThemeEmColor, #9a9aa3);
+    /* 금색은 '즐겨찾기 · 사용 중'의 의미색이라 테마에 맡기지 않는다.
+       실측: 라이트 테마의 --SmartThemeQuoteColor 가 rgb(54,55,51) 거의 검정이라
+       ★ 켜짐(54,55,51)과 꺼짐(78,79,74)이 구분이 안 됐고 '사용 중' 딱지도 묻혔다. */
+    --pm-acc: #d9a441;
+    --pm-sel: #5b8def;
+    --pm-sunk: rgba(0, 0, 0, 0.25);
+}
+
+/* ── 떠 있는 창 뼈대 ───────────────────────────────── */
+
+.pm-window {
+    position: fixed;
+    left: 50%;
+    top: 70px;
+    transform: translateX(-50%);
+    display: flex;
+    flex-direction: column;
+    background: var(--pm-panel);
+    backdrop-filter: blur(calc(var(--SmartThemeBlurStrength, 10px)));
+    border: 1px solid var(--pm-line);
+    border-radius: 12px;
+    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
+    color: var(--pm-tx);
+    overflow: hidden;
+    z-index: 4000;
+}
+
+.pm-window.pm-dragging {
+    user-select: none;
+    cursor: grabbing;
+}
+
+.pm-window-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex: 0 0 auto;
+    height: 38px;
+    padding: 0 10px;
+    background: var(--pm-panel2);
+    border-bottom: 1px solid var(--pm-line);
+    font-weight: 600;
+    font-size: 13px;
+    cursor: grab;
+    touch-action: none;
+}
+
+.pm-window-icon {
+    opacity: 0.75;
+}
+
+.pm-window-spacer {
+    flex: 1 1 auto;
+}
+
+.pm-window-headerslot {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: default;
+}
+
+.pm-window-btn {
+    width: 24px;
+    height: 24px;
+    display: grid;
+    place-items: center;
+    border-radius: 6px;
+    cursor: pointer;
+    color: var(--pm-dim);
+    flex: 0 0 auto;
+}
+
+.pm-window-btn:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: var(--pm-tx);
+}
+
+.pm-window-body {
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    overflow: hidden;
+}
+
+.pm-window.pm-collapsed .pm-window-body {
+    display: none;
+}
+
+/* ── 공용 조각 ─────────────────────────────────────── */
+
+.pm-search {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 12px;
+    padding: 8px 12px;
+    background: var(--pm-sunk);
+    border: 1px solid var(--pm-line);
+    border-radius: 8px;
+    flex: 0 0 auto;
+}
+
+.pm-search i {
+    color: var(--pm-dim);
+}
+
+.pm-search input {
+    flex: 1 1 auto;
+    min-width: 0;
+    background: none;
+    border: none;
+    outline: none;
+    color: var(--pm-tx);
+    font-size: 15px;
+    font-family: inherit;
+}
+
+.pm-search-sm {
+    margin: 0;
+    padding: 4px 10px;
+    width: 230px;
+}
+
+.pm-search-sm input {
+    font-size: 13px;
+}
+
+.pm-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
+}
+
+.pm-window .pm-chips {
+    padding: 0 12px 10px;
+    flex: 0 0 auto;
+}
+
+.pm-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 12px;
+    line-height: 1.5;
+    padding: 3px 9px;
+    border-radius: 99px;
+    background: var(--pm-panel2);
+    color: var(--pm-tx);
+    border: 1px solid transparent;
+    white-space: nowrap;
+}
+
+.pm-chip.pm-chip-on {
+    border-color: var(--pm-tx);
+    background: var(--pm-sel);
+    color: #fff;
+}
+
+.pm-chip.pm-chip-dashed {
+    background: none;
+    border: 1px dashed var(--pm-line);
+    color: var(--pm-dim);
+}
+
+.pm-chip-dot {
+    display: inline-block;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    flex: 0 0 auto;
+}
+
+.pm-chip-x {
+    margin-left: 2px;
+    opacity: 0.6;
+    cursor: pointer;
+}
+
+.pm-chip-x:hover {
+    opacity: 1;
+}
+
+.pm-clickable {
+    cursor: pointer;
+}
+
+.pm-hint {
+    font-size: 12px;
+    color: var(--pm-dim);
+}
+
+.pm-empty {
+    padding: 24px 16px;
+    text-align: center;
+    color: var(--pm-dim);
+    font-size: 13px;
+}
+
+.pm-section {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 14px 6px;
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    color: var(--pm-dim);
+}
+
+.pm-section::after {
+    content: "";
+    flex: 1 1 auto;
+    height: 1px;
+    background: var(--pm-line);
+}
+
+.pm-grid {
+    display: grid;
+    gap: 10px;
+    padding: 2px 14px 14px;
+}
+
+.pm-card {
+    position: relative;
+    border-radius: 10px;
+    overflow: hidden;
+    background: var(--pm-sunk);
+    border: 2px solid transparent;
+    cursor: pointer;
+}
+
+.pm-card img {
+    display: block;
+    width: 100%;
+    aspect-ratio: 1 / 1;
+    object-fit: cover;
+}
+
+.pm-card:hover {
+    border-color: rgba(255, 255, 255, 0.35);
+}
+
+.pm-card.pm-current {
+    border-color: var(--pm-acc);
+}
+
+.pm-card.pm-focused {
+    border-color: var(--pm-sel);
+    box-shadow: 0 0 0 3px rgba(91, 141, 239, 0.35);
+}
+
+.pm-card.pm-picked {
+    border-color: var(--pm-sel);
+}
+
+.pm-card-name {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    padding: 16px 7px 5px;
+    background: linear-gradient(transparent, rgba(0, 0, 0, 0.85));
+    font-size: 12px;
+    font-weight: 600;
+    color: #fff;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.pm-card-star {
+    position: absolute;
+    top: 4px;
+    right: 6px;
+    font-size: 13px;
+    color: var(--pm-acc);
+    text-shadow: 0 1px 3px #000;
+}
+
+.pm-card-badge {
+    position: absolute;
+    top: 5px;
+    left: 6px;
+    padding: 1px 5px;
+    border-radius: 4px;
+    background: var(--pm-acc);
+    color: #1d1f24;
+    font-size: 10px;
+    font-weight: 700;
+}
+
+.pm-card-check {
+    position: absolute;
+    top: 6px;
+    left: 6px;
+    width: 18px;
+    height: 18px;
+    border-radius: 5px;
+    background: var(--pm-sel);
+    color: #fff;
+    font-size: 12px;
+    display: grid;
+    place-items: center;
+}
+
+.pm-card-dots {
+    position: absolute;
+    top: 7px;
+    left: 7px;
+    display: flex;
+    gap: 3px;
+}
+
+.pm-card-dots i {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    box-shadow: 0 0 0 1.5px rgba(0, 0, 0, 0.6);
+}
+
+.pm-btn {
+    display: inline-block;
+    padding: 6px 12px;
+    border-radius: 7px;
+    background: var(--pm-panel2);
+    border: 1px solid var(--pm-line);
+    font-size: 12px;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.pm-btn:hover {
+    filter: brightness(1.2);
+}
+
+.pm-btn.pm-btn-primary {
+    background: var(--pm-sel);
+    border-color: var(--pm-sel);
+    color: #fff;
+}
+
+.pm-btn.pm-disabled {
+    opacity: 0.45;
+    cursor: default;
+    pointer-events: none;
+}
+
+.pm-foot {
+    display: flex;
+    gap: 16px;
+    align-items: center;
+    flex: 0 0 auto;
+    padding: 8px 14px;
+    border-top: 1px solid var(--pm-line);
+    font-size: 12px;
+    color: var(--pm-dim);
+}
+
+/* 금색 글씨는 밝은 배경에서 약해진다 — 링크는 파랑으로. */
+.pm-foot-link {
+    margin-left: auto;
+    color: var(--pm-sel);
+    font-weight: 600;
+}
+
+/* ── 빠른 전환창 ───────────────────────────────────── */
+
+.pm-window.pm-switch {
+    width: min(780px, 94vw);
+    max-height: min(74vh, 720px);
+}
+
+.pm-switch-body {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+}
+
+/* ── 관리 화면 ─────────────────────────────────────── */
+
+.pm-window.pm-manage {
+    left: 24px;
+    right: 24px;
+    top: 24px;
+    bottom: 24px;
+    width: auto;
+    transform: none;
+    max-width: none;
+}
+
+.pm-manage-layout {
+    display: flex;
+    flex: 1 1 auto;
+    min-height: 0;
+}
+
+.pm-side {
+    flex: 0 0 200px;
+    border-right: 1px solid var(--pm-line);
+    padding: 12px 10px;
+    font-size: 13px;
+    overflow-y: auto;
+}
+
+.pm-side h4 {
+    margin: 14px 4px 6px;
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    color: var(--pm-dim);
+    font-weight: 500;
+}
+
+.pm-side-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 8px;
+    border-radius: 6px;
+    cursor: pointer;
+}
+
+.pm-side-item:hover {
+    background: rgba(255, 255, 255, 0.07);
+}
+
+.pm-side-item.pm-on {
+    background: var(--pm-panel2);
+    font-weight: 600;
+}
+
+.pm-side-item i {
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    flex: 0 0 auto;
+}
+
+.pm-side-item span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.pm-side-item b {
+    margin-left: auto;
+    font-weight: 400;
+    color: var(--pm-dim);
+    font-size: 12px;
+}
+
+.pm-side-add {
+    color: var(--pm-dim);
+}
+
+.pm-main {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow-y: auto;
+    padding-top: 10px;
+}
+
+.pm-main-list {
+    padding-top: 0;
+}
+
+.pm-edit {
+    flex: 0 0 320px;
+    border-left: 1px solid var(--pm-line);
+    padding: 16px;
+    font-size: 13px;
+    overflow-y: auto;
+}
+
+.pm-edit-head {
+    position: relative;
+}
+
+.pm-edit-face {
+    width: 100%;
+    aspect-ratio: 1 / 1;
+    object-fit: cover;
+    border-radius: 10px;
+    display: block;
+}
+
+/* 이쪽은 얼굴 사진 위라 흰색 + 그림자로 테마 무관하게 보인다. */
+.pm-edit-star {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    font-size: 22px;
+    color: rgba(255, 255, 255, 0.75);
+    text-shadow: 0 1px 4px #000, 0 0 2px #000;
+    cursor: pointer;
+}
+
+.pm-edit-star.pm-on {
+    color: var(--pm-acc);
+}
+
+.pm-edit label {
+    display: block;
+    color: var(--pm-dim);
+    font-size: 11px;
+    margin: 12px 0 5px;
+    letter-spacing: 0.05em;
+}
+
+.pm-fld {
+    width: 100%;
+    background: var(--pm-sunk);
+    border: 1px solid var(--pm-line);
+    border-radius: 7px;
+    padding: 8px 10px;
+    color: var(--pm-tx);
+    font-family: inherit;
+    font-size: 13px;
+    line-height: 1.55;
+}
+
+.pm-edit-desc {
+    resize: vertical;
+    min-height: 120px;
+}
+
+.pm-edit-buttons {
+    display: flex;
+    gap: 8px;
+    margin-top: 16px;
+    flex-wrap: wrap;
+}
+
+.pm-seg {
+    display: flex;
+    border: 1px solid var(--pm-line);
+    border-radius: 7px;
+    overflow: hidden;
+}
+
+.pm-seg span {
+    padding: 3px 10px;
+    font-size: 12px;
+    color: var(--pm-dim);
+    cursor: pointer;
+}
+
+.pm-seg span.pm-on {
+    background: var(--pm-tx);
+    color: var(--pm-panel);
+    font-weight: 600;
+}
+
+.pm-row {
+    display: grid;
+    grid-template-columns: 22px 44px minmax(120px, 170px) 1fr minmax(0, 230px) 72px;
+    align-items: center;
+    gap: 12px;
+    padding: 6px 14px;
+    border-bottom: 1px solid var(--pm-line);
+    font-size: 13px;
+    cursor: pointer;
+}
+
+.pm-row:hover {
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.pm-row.pm-picked {
+    background: rgba(91, 141, 239, 0.18);
+}
+
+.pm-row.pm-current .pm-row-name {
+    color: var(--pm-acc);
+}
+
+.pm-row img {
+    width: 44px;
+    height: 44px;
+    border-radius: 8px;
+    object-fit: cover;
+}
+
+.pm-row-name,
+.pm-row-desc {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.pm-row-desc {
+    color: var(--pm-dim);
+}
+
+.pm-row-desc.pm-muted {
+    font-style: italic;
+    opacity: 0.7;
+}
+
+.pm-row-star {
+    color: var(--pm-acc);
+}
+
+.pm-row-tags {
+    display: flex;
+    gap: 4px;
+    overflow: hidden;
+}
+
+.pm-row-lore {
+    color: var(--pm-dim);
+    font-size: 12px;
+    text-align: right;
+}
+
+/* 하단 일괄 바. 배경을 #0f1013로 박았더니 라이트 테마에서 글자(--pm-tx=어두움)가
+   거의 안 보였다(실측 스크샷). 배경도 테마 변수로 내린다. */
+.pm-bulk {
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    bottom: 18px;
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    padding: 9px 14px;
+    background: var(--pm-panel2);
+    color: var(--pm-tx);
+    border: 1px solid var(--pm-line);
+    border-radius: 10px;
+    font-size: 13px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+    z-index: 5;
+}
+
+.pm-bulk .pm-btn {
+    background: var(--pm-panel);
+}
+
+.pm-bulk-clear {
+    color: var(--pm-dim);
+    opacity: 0.85;
+}
+
+/* ── 태그 메뉴 ─────────────────────────────────────── */
+
+.pm-tagmenu {
+    position: fixed;
+    min-width: 230px;
+    max-width: 320px;
+    background: var(--pm-panel);
+    border: 1px solid var(--pm-line);
+    border-radius: 9px;
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.6);
+    padding: 8px;
+    z-index: 9000;
+}
+
+.pm-tagmenu-input {
+    width: 100%;
+    background: var(--pm-sunk);
+    border: 1px solid var(--pm-line);
+    border-radius: 6px;
+    padding: 6px 8px;
+    color: var(--pm-tx);
+    font-size: 13px;
+    font-family: inherit;
+    outline: none;
+}
+
+.pm-tagmenu-list {
+    max-height: 260px;
+    overflow-y: auto;
+    margin-top: 6px;
+}
+
+.pm-tagmenu-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 6px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 13px;
+}
+
+.pm-tagmenu-row:hover {
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.pm-tagmenu-name {
+    flex: 1 1 auto;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.pm-tagmenu-mark {
+    color: var(--pm-sel);
+    width: 12px;
+}
+
+.pm-tagmenu-tools {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    color: var(--pm-dim);
+}
+
+.pm-tagmenu-tools i:hover {
+    color: var(--pm-tx);
+}
+
+.pm-tagmenu-tools input[type="color"] {
+    width: 18px;
+    height: 18px;
+    padding: 0;
+    border: none;
+    background: none;
+    cursor: pointer;
+}
+
+.pm-tagmenu-empty {
+    padding: 10px 6px;
+    color: var(--pm-dim);
+    font-size: 12px;
+}
+
+/* ── 입력창 얼굴 버튼 ──────────────────────────────── */
+
+.pm-face-button {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    overflow: hidden;
+    cursor: pointer;
+    flex: 0 0 auto;
+    outline: 2px solid var(--pm-acc);
+    outline-offset: 2px;
+    margin: 0 4px;
+}
+
+.pm-face-button img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+
+.pm-face-button:hover {
+    filter: brightness(1.15);
+}
+
+/* ── 원래 페르소나 탭 끼워넣기 ─────────────────────── */
+
+.pm-tab-chips {
+    padding: 6px 2px 8px;
+}
+
+.pm-tab-current {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    margin-left: 8px;
+    vertical-align: middle;
+    flex-wrap: wrap;
+}
+
+.pm-chips-inline {
+    display: inline-flex;
+    flex-wrap: wrap;
+    gap: 4px;
+}
+
+/* 꺼진 ★은 큰 배경 위에 맨소로 놓인다 — 흰색 반투명으로 두면 라이트 테마에서
+   사라진다(실측). 테마 흐림색 기준으로 잡는다. */
+.pm-tab-star {
+    font-size: 17px;
+    color: var(--pm-dim);
+    opacity: 0.45;
+    cursor: pointer;
+    line-height: 1;
+}
+
+.pm-tab-star:hover {
+    opacity: 0.8;
+}
+
+.pm-tab-star.pm-on {
+    color: var(--pm-acc);
+    opacity: 1;
+}
+
+/* ── 설정 서랍 ─────────────────────────────────────── */
+
+.pm-settings-inner {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    align-items: flex-start;
+    padding: 6px 0;
+}
+
+.pm-settings-stat {
+    font-size: 12px;
+    color: var(--pm-dim);
+}

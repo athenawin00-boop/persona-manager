@@ -1,0 +1,551 @@
+/**
+ * 관리 화면 — 요술봉 메뉴 '페르소나 매니저'로 열린다.
+ *
+ * 왼쪽 사이드바(범위) · 검색 · 보기 토글(목록/작게/크게) ·
+ * 목록·작게에서 다중 선택 → 하단 바 일괄 태그/즐겨찾기 ·
+ * 크게에서 카드 클릭 → 오른쪽 편집 패널.
+ */
+
+import { createFloatingWindow } from './window.js';
+import { filterPersonas, sortByName, sortByRecent } from './filters.js';
+import {
+    buildEntries, getCurrentAvatarId, switchPersona,
+    openOriginalTab, renamePersonaSafe, setDescriptionSafe, wireAvatarImage,
+} from './st-bridge.js';
+import {
+    addTagToPersona, countByTag, createTag, deleteTag, getPersonaTags,
+    removeTagFromPersona, renameTag, setFavorite, setTagColor, toggleFavorite,
+} from './settings.js';
+import { personaCard, tagChip, plainChip, emptyNote, openTagMenu } from './ui-parts.js';
+
+const WINDOW_ID = 'pm_manage_window';
+
+let win = null;
+let store = null;
+let openSwitcher = null;
+
+let query = '';
+let scope = 'all';
+let picked = new Set();        // 다중 선택된 avatarId
+let selectedId = null;         // 크게 모드 편집 대상
+
+/**
+ * @param {object} deps
+ * @param {object} deps.store {get, save}
+ * @param {function} [deps.openSwitcher]
+ */
+export function initManager(deps) {
+    store = deps.store;
+    openSwitcher = deps.openSwitcher;
+}
+
+/** 관리 화면을 연다. */
+export function openManager() {
+    if (!win) win = buildWindow();
+    const settings = store.get();
+    scope = settings.lastSidebar || 'all';
+    picked.clear();
+    win.open();
+    render();
+}
+
+/** 열려 있으면 다시 그린다. */
+export function refreshManager() {
+    if (win?.isOpen()) render();
+}
+
+function buildWindow() {
+    const w = createFloatingWindow({
+        id: WINDOW_ID,
+        title: '페르소나 관리',
+        icon: 'fa-solid fa-user-gear',
+        extraClass: 'pm-manage',
+        collapsible: false,
+    });
+
+    // 제목줄: 검색 + 보기 토글
+    const search = document.createElement('div');
+    search.className = 'pm-search pm-search-sm pm-nodrag';
+    search.innerHTML = '<i class="fa-solid fa-magnifying-glass"></i>';
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.id = 'pm_manage_search';
+    input.placeholder = '찾기…';
+    input.autocomplete = 'off';
+    input.addEventListener('input', () => { query = input.value; render(); });
+    search.append(input);
+
+    const seg = document.createElement('div');
+    seg.className = 'pm-seg pm-nodrag';
+    seg.id = 'pm_manage_viewmode';
+    for (const [mode, label] of [['list', '목록'], ['small', '작게'], ['large', '크게']]) {
+        const b = document.createElement('span');
+        b.dataset.mode = mode;
+        b.textContent = label;
+        b.addEventListener('click', () => {
+            const s = store.get();
+            s.viewMode = mode;
+            store.save();
+            picked.clear();
+            render();
+        });
+        seg.append(b);
+    }
+
+    w.headerSlot.append(search, seg);
+
+    const layout = document.createElement('div');
+    layout.className = 'pm-manage-layout';
+    layout.innerHTML =
+        '<div class="pm-side" id="pm_manage_side"></div>' +
+        '<div class="pm-main" id="pm_manage_main"></div>' +
+        '<div class="pm-edit" id="pm_manage_edit"></div>';
+    w.body.append(layout);
+
+    const bulk = document.createElement('div');
+    bulk.className = 'pm-bulk';
+    bulk.id = 'pm_manage_bulk';
+    bulk.style.display = 'none';
+    w.body.append(bulk);
+
+    return w;
+}
+
+/** 현재 보기 모드 */
+function viewMode() {
+    return store.get().viewMode;
+}
+
+function render() {
+    if (!win) return;
+    const settings = store.get();
+    const currentId = getCurrentAvatarId();
+    const entries = buildEntries(settings);
+    const tagNameById = Object.fromEntries(settings.tags.map(t => [t.id, t.name]));
+    const mode = viewMode();
+
+    win.root.querySelectorAll('#pm_manage_viewmode span').forEach((el) => {
+        el.classList.toggle('pm-on', el.dataset.mode === mode);
+    });
+
+    renderSidebar(settings, entries);
+
+    let matched = filterPersonas(entries, { query, scope, tagNameById });
+    matched = scope === 'recent' ? sortByRecent(matched) : sortByName(matched);
+
+    renderMain(settings, matched, currentId, mode);
+    renderEdit(settings, entries, currentId, mode);
+    renderBulk(settings, mode);
+}
+
+function renderSidebar(settings, entries) {
+    const side = win.root.querySelector('#pm_manage_side');
+    side.textContent = '';
+
+    const allIds = entries.map(e => e.avatarId);
+    const counts = countByTag(settings, allIds);
+
+    const item = (key, label, count, color) => {
+        const row = document.createElement('div');
+        row.className = 'pm-side-item' + (scope === key ? ' pm-on' : '');
+        row.dataset.scope = key;
+        if (color) {
+            const dot = document.createElement('i');
+            dot.style.background = color;
+            row.append(dot);
+        }
+        const name = document.createElement('span');
+        name.textContent = label;
+        const num = document.createElement('b');
+        num.textContent = String(count);
+        row.append(name, num);
+        row.addEventListener('click', () => {
+            scope = key;
+            const s = store.get();
+            s.lastSidebar = key;
+            store.save();
+            picked.clear();
+            render();
+        });
+        side.append(row);
+        return row;
+    };
+
+    const head = (text) => {
+        const h = document.createElement('h4');
+        h.textContent = text;
+        side.append(h);
+    };
+
+    item('all', '전체', entries.length);
+    item('favorites', '★ 즐겨찾기', entries.filter(e => e.favorite).length);
+    item('recent', '최근', entries.filter(e => e.recentIndex >= 0).length);
+
+    head('태그');
+    for (const tag of settings.tags) {
+        const row = item(`tag:${tag.id}`, tag.name, counts[tag.id] ?? 0, tag.color);
+        row.title = '우클릭하면 이름·색·삭제를 고를 수 있어요.';
+        row.addEventListener('contextmenu', (e) => {
+            e.preventDefault();
+            openTagMenu(row, settings, {
+                activeIds: [],
+                allowManage: true,
+                onPick: (id) => { scope = `tag:${id}`; render(); },
+                onCreate: (name) => { createTag(settings, name); store.save(); render(); },
+                onManage: (id, action, value) => handleTagManage(settings, id, action, value),
+            });
+        });
+    }
+    const addRow = document.createElement('div');
+    addRow.className = 'pm-side-item pm-side-add';
+    addRow.textContent = '＋ 새 태그';
+    addRow.addEventListener('click', () => {
+        openTagMenu(addRow, store.get(), {
+            allowManage: true,
+            onPick: (id) => { scope = `tag:${id}`; render(); },
+            onCreate: (name) => { createTag(store.get(), name); store.save(); render(); },
+            onManage: (id, action, value) => handleTagManage(store.get(), id, action, value),
+        });
+    });
+    side.append(addRow);
+
+    head('정리용');
+    item('special:untagged', '태그 없음', entries.filter(e => (e.tagIds?.length ?? 0) === 0).length);
+    item('special:nodesc', '설명 빔', entries.filter(e => !String(e.description ?? '').trim()).length);
+    item('special:lorebook', '로어북 붙음', entries.filter(e => !!String(e.lorebook ?? '').trim()).length);
+    item('special:noimage', '사진 없음', entries.filter(e => e.hasImage === false).length);
+}
+
+function handleTagManage(settings, tagId, action, value) {
+    if (action === 'color') {
+        setTagColor(settings, tagId, value);
+        store.save();
+        render();
+        return;
+    }
+    if (action === 'rename') {
+        const tag = settings.tags.find(t => t.id === tagId);
+        const next = globalThis.prompt('새 태그 이름을 적어 주세요.', tag?.name ?? '');
+        if (next === null) return;
+        if (!renameTag(settings, tagId, next)) {
+            toastr.warning('같은 이름의 태그가 이미 있거나 이름이 비어 있어요.');
+            return;
+        }
+        store.save();
+        render();
+        return;
+    }
+    if (action === 'delete') {
+        const tag = settings.tags.find(t => t.id === tagId);
+        if (!globalThis.confirm(`태그 "${tag?.name ?? tagId}"를 지울까요? 이 태그가 달린 페르소나에서도 함께 떨어져요.`)) return;
+        deleteTag(settings, tagId);
+        if (scope === `tag:${tagId}`) scope = 'all';
+        store.save();
+        render();
+    }
+}
+
+function renderMain(settings, matched, currentId, mode) {
+    const main = win.root.querySelector('#pm_manage_main');
+    main.textContent = '';
+    main.className = `pm-main pm-main-${mode}`;
+
+    if (!matched.length) {
+        main.append(emptyNote('여기에 해당하는 페르소나가 없어요.'));
+        return;
+    }
+
+    if (mode === 'list') {
+        for (const entry of matched) main.append(listRow(settings, entry, currentId));
+        return;
+    }
+
+    const grid = document.createElement('div');
+    grid.className = 'pm-grid';
+    grid.style.gridTemplateColumns = mode === 'small'
+        ? 'repeat(auto-fill, minmax(92px, 1fr))'
+        : 'repeat(auto-fill, minmax(150px, 1fr))';
+
+    for (const entry of matched) {
+        grid.append(personaCard(entry, settings, {
+            currentId,
+            picked: mode === 'small' && picked.has(entry.avatarId),
+            focused: mode === 'large' && entry.avatarId === selectedId,
+            onClick: (en) => {
+                if (mode === 'small') {
+                    picked.has(en.avatarId) ? picked.delete(en.avatarId) : picked.add(en.avatarId);
+                } else {
+                    selectedId = en.avatarId;
+                }
+                render();
+            },
+        }));
+    }
+    main.append(grid);
+}
+
+function listRow(settings, entry, currentId) {
+    const row = document.createElement('div');
+    row.className = 'pm-row';
+    row.dataset.avatarId = entry.avatarId;
+    if (picked.has(entry.avatarId)) row.classList.add('pm-picked');
+    if (entry.avatarId === currentId) row.classList.add('pm-current');
+
+    const box = document.createElement('span');
+    box.className = 'pm-row-check';
+    box.textContent = picked.has(entry.avatarId) ? '☑' : '☐';
+
+    const img = document.createElement('img');
+    wireAvatarImage(img, entry.avatarId);
+
+    const name = document.createElement('b');
+    name.className = 'pm-row-name';
+    if (entry.favorite) {
+        const star = document.createElement('span');
+        star.className = 'pm-row-star';
+        star.textContent = '★ ';
+        name.append(star);
+    }
+    name.append(document.createTextNode(entry.name));
+
+    const desc = document.createElement('span');
+    desc.className = 'pm-row-desc';
+    const text = String(entry.description ?? '').replace(/\s+/g, ' ').trim();
+    if (text) desc.textContent = text;
+    else {
+        desc.textContent = '(설명 비어 있음)';
+        desc.classList.add('pm-muted');
+    }
+
+    const tags = document.createElement('span');
+    tags.className = 'pm-row-tags';
+    for (const tid of getPersonaTags(settings, entry.avatarId)) {
+        const tag = settings.tags.find(t => t.id === tid);
+        if (tag) tags.append(tagChip(tag));
+    }
+
+    const lore = document.createElement('span');
+    lore.className = 'pm-row-lore';
+    lore.textContent = String(entry.lorebook ?? '').trim() ? '📖 로어북' : '';
+
+    row.append(box, img, name, desc, tags, lore);
+    row.addEventListener('click', () => {
+        picked.has(entry.avatarId) ? picked.delete(entry.avatarId) : picked.add(entry.avatarId);
+        selectedId = entry.avatarId;
+        render();
+    });
+    return row;
+}
+
+function renderEdit(settings, entries, currentId, mode) {
+    const panel = win.root.querySelector('#pm_manage_edit');
+    panel.textContent = '';
+    panel.style.display = mode === 'large' ? '' : 'none';
+    if (mode !== 'large') return;
+
+    const entry = entries.find(e => e.avatarId === selectedId);
+    if (!entry) {
+        panel.append(emptyNote('카드를 하나 고르면 여기서 이름과 설명을 고칠 수 있어요.'));
+        return;
+    }
+
+    const img = document.createElement('img');
+    img.className = 'pm-edit-face';
+    wireAvatarImage(img, entry.avatarId);
+
+    const starBtn = document.createElement('span');
+    starBtn.className = 'pm-edit-star' + (entry.favorite ? ' pm-on' : '');
+    starBtn.id = 'pm_edit_star';
+    starBtn.textContent = '★';
+    starBtn.title = '즐겨찾기';
+    starBtn.addEventListener('click', () => {
+        toggleFavorite(settings, entry.avatarId);
+        store.save();
+        render();
+    });
+
+    const nameLabel = document.createElement('label');
+    nameLabel.textContent = '이름';
+    const nameInput = document.createElement('input');
+    nameInput.type = 'text';
+    nameInput.className = 'pm-fld';
+    nameInput.id = 'pm_edit_name';
+    nameInput.value = entry.name;
+    const commitName = async () => {
+        if (nameInput.value.trim() === entry.name) return;
+        try {
+            await renamePersonaSafe(entry.avatarId, nameInput.value);
+        } catch (err) {
+            console.error('[persona-manager] 이름 저장 실패', err);
+            toastr.error('이름을 저장하지 못했어요. 콘솔을 확인해 주세요.');
+            nameInput.value = entry.name;
+        }
+        render();
+    };
+    nameInput.addEventListener('blur', commitName);
+    nameInput.addEventListener('keydown', (e) => {
+        e.stopPropagation();
+        if (e.key === 'Enter') { e.preventDefault(); nameInput.blur(); }
+    });
+
+    const descLabel = document.createElement('label');
+    descLabel.textContent = '설명';
+    const descInput = document.createElement('textarea');
+    descInput.className = 'pm-fld pm-edit-desc';
+    descInput.id = 'pm_edit_desc';
+    descInput.rows = 8;
+    descInput.value = entry.description;
+    const commitDesc = async () => {
+        if (descInput.value === entry.description) return;
+        try {
+            await setDescriptionSafe(entry.avatarId, descInput.value);
+            toastr.success('설명을 저장했어요.');
+        } catch (err) {
+            console.error('[persona-manager] 설명 저장 실패', err);
+            toastr.error('설명을 저장하지 못했어요. 콘솔을 확인해 주세요.');
+            descInput.value = entry.description;
+        }
+        render();
+    };
+    descInput.addEventListener('blur', commitDesc);
+    descInput.addEventListener('keydown', e => e.stopPropagation());
+
+    const tagLabel = document.createElement('label');
+    tagLabel.textContent = '태그';
+    const tagRow = document.createElement('div');
+    tagRow.className = 'pm-chips';
+    tagRow.id = 'pm_edit_tags';
+    for (const tid of getPersonaTags(settings, entry.avatarId)) {
+        const tag = settings.tags.find(t => t.id === tid);
+        if (!tag) continue;
+        tagRow.append(tagChip(tag, {
+            removable: true,
+            onRemove: (id) => {
+                removeTagFromPersona(settings, entry.avatarId, id);
+                store.save();
+                render();
+            },
+        }));
+    }
+    const addChip = plainChip('＋', { dashed: true, title: '태그 달기' });
+    addChip.addEventListener('click', () => {
+        openTagMenu(addChip, settings, {
+            activeIds: getPersonaTags(settings, entry.avatarId),
+            allowManage: true,
+            onPick: (id) => {
+                if (!addTagToPersona(settings, entry.avatarId, id)) removeTagFromPersona(settings, entry.avatarId, id);
+                store.save();
+                render();
+            },
+            onCreate: (name) => {
+                const { tag } = createTag(settings, name);
+                if (tag) addTagToPersona(settings, entry.avatarId, tag.id);
+                store.save();
+                render();
+            },
+            onManage: (id, action, value) => handleTagManage(settings, id, action, value),
+        });
+    });
+    tagRow.append(addChip);
+
+    const buttons = document.createElement('div');
+    buttons.className = 'pm-edit-buttons';
+
+    const switchBtn = document.createElement('div');
+    switchBtn.className = 'pm-btn pm-btn-primary';
+    switchBtn.id = 'pm_edit_switch';
+    switchBtn.textContent = '이 페르소나로 바꾸기';
+    switchBtn.classList.toggle('pm-disabled', entry.avatarId === currentId);
+    switchBtn.addEventListener('click', async () => {
+        if (entry.avatarId === currentId) return;
+        await switchPersona(entry.avatarId);
+        render();
+    });
+
+    const openBtn = document.createElement('div');
+    openBtn.className = 'pm-btn';
+    openBtn.id = 'pm_edit_opentab';
+    openBtn.textContent = '원래 탭에서 열기';
+    openBtn.addEventListener('click', () => openOriginalTab(entry.avatarId));
+
+    buttons.append(switchBtn, openBtn);
+
+    const head = document.createElement('div');
+    head.className = 'pm-edit-head';
+    head.append(img, starBtn);
+
+    panel.append(head, nameLabel, nameInput, descLabel, descInput, tagLabel, tagRow, buttons);
+}
+
+function renderBulk(settings, mode) {
+    const bar = win.root.querySelector('#pm_manage_bulk');
+    bar.textContent = '';
+
+    if (mode === 'large' || picked.size === 0) {
+        bar.style.display = 'none';
+        return;
+    }
+    bar.style.display = '';
+
+    const count = document.createElement('b');
+    count.textContent = `${picked.size}개 선택됨`;
+
+    const addBtn = document.createElement('span');
+    addBtn.className = 'pm-btn';
+    addBtn.id = 'pm_bulk_addtag';
+    addBtn.textContent = '＋ 태그 달기';
+    addBtn.addEventListener('click', () => {
+        openTagMenu(addBtn, settings, {
+            onPick: (id) => {
+                for (const avatarId of picked) addTagToPersona(settings, avatarId, id);
+                store.save();
+                render();
+            },
+            onCreate: (name) => {
+                const { tag } = createTag(settings, name);
+                if (tag) for (const avatarId of picked) addTagToPersona(settings, avatarId, tag.id);
+                store.save();
+                render();
+            },
+        });
+    });
+
+    const delBtn = document.createElement('span');
+    delBtn.className = 'pm-btn';
+    delBtn.id = 'pm_bulk_removetag';
+    delBtn.textContent = '－ 태그 빼기';
+    delBtn.addEventListener('click', () => {
+        openTagMenu(delBtn, settings, {
+            onPick: (id) => {
+                for (const avatarId of picked) removeTagFromPersona(settings, avatarId, id);
+                store.save();
+                render();
+            },
+            onCreate: () => { },
+        });
+    });
+
+    const favBtn = document.createElement('span');
+    favBtn.className = 'pm-btn';
+    favBtn.id = 'pm_bulk_fav';
+    const allFav = [...picked].every(id => settings.favorites.includes(id));
+    favBtn.textContent = allFav ? '★ 즐겨찾기 빼기' : '★ 즐겨찾기';
+    favBtn.addEventListener('click', () => {
+        for (const avatarId of picked) setFavorite(settings, avatarId, !allFav);
+        store.save();
+        render();
+    });
+
+    const clear = document.createElement('span');
+    clear.className = 'pm-bulk-clear pm-clickable';
+    clear.id = 'pm_bulk_clear';
+    clear.textContent = '선택 해제';
+    clear.addEventListener('click', () => { picked.clear(); render(); });
+
+    bar.append(count, addBtn, delBtn, favBtn, clear);
+}
+
+/** 전환창으로 가는 링크를 쓰는 쪽이 있으면 노출 */
+export function getSwitcherOpener() {
+    return openSwitcher;
+}
